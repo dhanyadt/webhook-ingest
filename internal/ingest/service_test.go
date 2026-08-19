@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/convin/webhook-ingest/internal/ingest"
 	"github.com/convin/webhook-ingest/internal/testutil"
 )
 
@@ -129,4 +130,39 @@ func TestRecordingIsEventuallyProcessed(t *testing.T) {
 	}
 
 	t.Fatal("recording was not marked as processed")
+}
+
+func TestWaitWaitsForRecordingProcessing(t *testing.T) {
+	svc, st := testutil.NewService(t)
+	eventID, callID, accountID := testutil.IDs(t, st)
+	ctx := context.Background()
+
+	evt := ingest.Event{
+		EventID:      eventID,
+		CallID:       callID,
+		AccountID:    accountID,
+		Status:       "completed",
+		DurationSec:  143,
+		RecordingURL: "https://recordings.example.com/test.wav",
+	}
+
+	if err := svc.Ingest(ctx, evt); err != nil {
+		t.Fatalf("Ingest: %v", err)
+	}
+
+	svc.Wait(ctx)
+
+	var processed bool
+	row := st.Pool().QueryRow(
+		ctx,
+		`SELECT recording_processed FROM calls WHERE call_id = $1`,
+		callID,
+	)
+	if err := row.Scan(&processed); err != nil {
+		t.Fatalf("scan recording_processed: %v", err)
+	}
+
+	if !processed {
+		t.Fatal("expected Wait to wait for recording processing")
+	}
 }

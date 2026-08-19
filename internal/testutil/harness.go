@@ -78,3 +78,23 @@ func NewServer(t *testing.T) (*httptest.Server, *store.Store) {
 	t.Cleanup(srv.Close)
 	return srv, s
 }
+
+// NewService creates an ingest service for tests that need to exercise
+// background processing or shutdown behavior directly.
+func NewService(t *testing.T) (*ingest.Service, *store.Store) {
+	t.Helper()
+	cfg := config.Load()
+
+	s := NewStore(t)
+
+	rdb, err := redisclient.New(context.Background(), cfg.RedisAddr)
+	if err != nil {
+		t.Fatalf("connect to redis (is `docker compose up` running?): %v", err)
+	}
+	t.Cleanup(func() { _ = rdb.Close() })
+
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	svc := ingest.New(s, stats.NewCache(), rdb, log)
+
+	return svc, s
+}
