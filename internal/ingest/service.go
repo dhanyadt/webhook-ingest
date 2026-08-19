@@ -39,7 +39,7 @@ func (s *Service) Stats(accountID string) stats.AccountStats {
 // Ingest stores a delivery and kicks off processing. Processing runs
 // asynchronously so the provider gets a fast acknowledgement.
 func (s *Service) Ingest(ctx context.Context, evt Event) error {
-	
+
 	payload, err := json.Marshal(evt)
 	if err != nil {
 		return err
@@ -55,42 +55,36 @@ func (s *Service) Ingest(ctx context.Context, evt Event) error {
 		OccurredAt:   evt.OccurredAt,
 		Payload:      payload,
 	}
-	inserted, err := s.store.InsertEvent(ctx, rec)
-if err != nil {
-	return err
-}
-if !inserted {
-	s.log.Info("duplicate delivery ignored", "event_id", evt.EventID)
-	return nil
-}
+	inserted, err := s.store.ProcessEvent(ctx, rec)
+	if err != nil {
+		return err
+	}
+	if !inserted {
+		s.log.Info("duplicate delivery ignored", "event_id", evt.EventID)
+		return nil
+	}
 
-if err := s.store.UpsertCall(ctx, rec); err != nil {
-	return err
-}
-if err := s.store.IncrementAccountStats(ctx, rec.AccountID, rec.DurationSec); err != nil {
-	return err
-}
-s.cache.Record(rec.AccountID, rec.DurationSec)
+	s.cache.Record(rec.AccountID, rec.DurationSec)
 
 	// Recordings are slow to fetch, so that part does not block the provider.
 	if rec.RecordingURL != "" {
-	s.wg.Add(1)
+		s.wg.Add(1)
 
-	go func() {
-		defer s.wg.Done()
+		go func() {
+			defer s.wg.Done()
 
-		recordingCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
+			recordingCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
 
-		if err := s.processRecording(recordingCtx, rec); err != nil {
-			s.log.Error(
-				"recording processing failed",
-				"call_id", rec.CallID,
-				"err", err,
-			)
-		}
-	}()
-}
+			if err := s.processRecording(recordingCtx, rec); err != nil {
+				s.log.Error(
+					"recording processing failed",
+					"call_id", rec.CallID,
+					"err", err,
+				)
+			}
+		}()
+	}
 
 	return nil
 }

@@ -90,3 +90,42 @@ func TestUpsertCallThenMarkRecordingProcessed(t *testing.T) {
 		t.Fatal("expected recording_processed to be true")
 	}
 }
+
+func TestProcessEventIsIdempotent(t *testing.T) {
+	s := testutil.NewStore(t)
+	eventID, callID, accountID := testutil.IDs(t, s)
+	ctx := context.Background()
+
+	evt := store.Event{
+		EventID:     eventID,
+		CallID:      callID,
+		AccountID:   accountID,
+		Status:      "completed",
+		DurationSec: 10,
+		Payload:     []byte(`{}`),
+	}
+
+	inserted, err := s.ProcessEvent(ctx, evt)
+	if err != nil {
+		t.Fatalf("first ProcessEvent: %v", err)
+	}
+	if !inserted {
+		t.Fatal("expected first event to be inserted")
+	}
+
+	inserted, err = s.ProcessEvent(ctx, evt)
+	if err != nil {
+		t.Fatalf("second ProcessEvent: %v", err)
+	}
+	if inserted {
+		t.Fatal("expected duplicate event to be ignored")
+	}
+
+	stats, err := s.AccountStats(ctx, accountID)
+	if err != nil {
+		t.Fatalf("AccountStats: %v", err)
+	}
+	if stats.CallCount != 1 || stats.TotalDurationSec != 10 {
+		t.Fatalf("got %+v, want CallCount=1 TotalDurationSec=10", stats)
+	}
+}
