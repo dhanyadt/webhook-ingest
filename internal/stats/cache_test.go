@@ -30,3 +30,29 @@ func TestCacheGetUnknownAccountIsZero(t *testing.T) {
 		t.Fatalf("got %+v, want zero value", got)
 	}
 }
+
+func TestCacheRecordConcurrent(t *testing.T) {
+	c := stats.NewCache()
+
+	const workers = 100
+
+	done := make(chan struct{})
+	for i := 0; i < workers; i++ {
+		go func() {
+			c.Record("acc_1", 10)
+			done <- struct{}{}
+		}()
+	}
+
+	for i := 0; i < workers; i++ {
+		<-done
+	}
+
+	got := c.Get("acc_1")
+	if got.CallCount != workers {
+		t.Fatalf("got CallCount=%d, want %d", got.CallCount, workers)
+	}
+	if got.TotalDurationSec != workers*10 {
+		t.Fatalf("got TotalDurationSec=%d, want %d", got.TotalDurationSec, workers*10)
+	}
+}
