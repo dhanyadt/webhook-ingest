@@ -31,6 +31,23 @@ func New(s *store.Store, c *stats.Cache, rdb *redis.Client, log *slog.Logger) *S
 	return &Service{store: s, cache: c, rdb: rdb, log: log}
 }
 
+// LoadStats restores the in-memory cache from durable Postgres aggregates.
+func (s *Service) LoadStats(ctx context.Context) error {
+	all, err := s.store.AllAccountStats(ctx)
+	if err != nil {
+		return err
+	}
+
+	for accountID, st := range all {
+		s.cache.Set(accountID, stats.AccountStats{
+			CallCount:        st.CallCount,
+			TotalDurationSec: st.TotalDurationSec,
+		})
+	}
+
+	return nil
+}
+
 // Stats returns the cached totals for an account.
 func (s *Service) Stats(accountID string) stats.AccountStats {
 	return s.cache.Get(accountID)

@@ -3,12 +3,15 @@ package ingest_test
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/convin/webhook-ingest/internal/ingest"
+	"github.com/convin/webhook-ingest/internal/stats"
+	"github.com/convin/webhook-ingest/internal/store"
 	"github.com/convin/webhook-ingest/internal/testutil"
 )
 
@@ -164,5 +167,39 @@ func TestWaitWaitsForRecordingProcessing(t *testing.T) {
 
 	if !processed {
 		t.Fatal("expected Wait to wait for recording processing")
+	}
+}
+
+func TestLoadStatsRestoresCache(t *testing.T) {
+	_, st := testutil.NewServer(t)
+	eventID, _, accountID := testutil.IDs(t, st)
+	ctx := context.Background()
+
+	evt := store.Event{
+		EventID:     eventID,
+		CallID:      "call_load_stats",
+		AccountID:   accountID,
+		Status:      "completed",
+		DurationSec: 143,
+		Payload:     []byte(`{}`),
+	}
+
+	if _, err := st.InsertEvent(ctx, evt); err != nil {
+		t.Fatalf("InsertEvent: %v", err)
+	}
+
+	if err := st.IncrementAccountStats(ctx, accountID, 143); err != nil {
+		t.Fatalf("IncrementAccountStats: %v", err)
+	}
+
+	svc := ingest.New(st, stats.NewCache(), nil, slog.Default())
+
+	if err := svc.LoadStats(ctx); err != nil {
+		t.Fatalf("LoadStats: %v", err)
+	}
+
+	got := svc.Stats(accountID)
+	if got.CallCount != 1 || got.TotalDurationSec != 143 {
+		t.Fatalf("got %+v, want CallCount=1 TotalDurationSec=143", got)
 	}
 }

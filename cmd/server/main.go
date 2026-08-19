@@ -40,7 +40,16 @@ func main() {
 	defer func() { _ = rdb.Close() }()
 
 	svc := ingest.New(st, stats.NewCache(), rdb, log)
-	srv := &http.Server{Addr: cfg.HTTPAddr, Handler: httpapi.NewRouter(svc, log)}
+
+	if err := svc.LoadStats(ctx); err != nil {
+		log.Error("load account stats", "err", err)
+		os.Exit(1)
+	}
+
+	srv := &http.Server{
+		Addr:    cfg.HTTPAddr,
+		Handler: httpapi.NewRouter(svc, log),
+	}
 
 	go func() {
 		log.Info("listening", "addr", cfg.HTTPAddr)
@@ -55,12 +64,22 @@ func main() {
 	<-stop
 
 	log.Info("shutting down")
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+
+	shutdownCtx, cancel := context.WithTimeout(
+		context.Background(),
+		shutdownTimeout,
+	)
 	defer cancel()
+
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		log.Error("shutdown", "err", err)
 	}
+
 	if err := svc.Wait(shutdownCtx); err != nil {
-	log.Error("background work did not finish before shutdown deadline", "err", err)
-}
+		log.Error(
+			"background work did not finish before shutdown deadline",
+			"err",
+			err,
+		)
+	}
 }

@@ -56,3 +56,17 @@ func TestCacheRecordConcurrent(t *testing.T) {
 		t.Fatalf("got TotalDurationSec=%d, want %d", got.TotalDurationSec, workers*10)
 	}
 }
+
+func TestCacheSet(t *testing.T) {
+	c := stats.NewCache()
+
+	c.Set("acc_1", stats.AccountStats{
+		CallCount:        7,
+		TotalDurationSec: 143,
+	})
+
+	got := c.Get("acc_1")
+	if got.CallCount != 7 || got.TotalDurationSec != 143 {
+		t.Fatalf("got %+v, want CallCount=7 TotalDurationSec=143", got)
+	}
+}
